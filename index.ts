@@ -1,5 +1,4 @@
 import { TronWeb } from "tronweb";
-// const {TronWeb} = require('tronweb');
 import express from 'express'
 import bodyParser from 'body-parser'
 import HDKey from 'hdkey'
@@ -7,15 +6,7 @@ import bip39 from 'bip39'
 const app = express();
 app.use(bodyParser.json());
 const FULL_NODE = 'https://nile.trongrid.io';
-const SOLIDITY_NODE = 'https://nile.trongrid.io';
-const EVENT_SERVER = 'https://nile.trongrid.io';
-// child address
-// {
-//     "address": "TNThbSL9AsKyzm5K3NDp64jDAvYEwHinVG",
-//     "privateKey": "0a32c532c1e8bb931ca0be339e3798727252b9db48707a59ee31a79563763788"
-// }
-// // USDT contract address on TRC20
-const usdtContractAddress = 'TWfXw4VZYtuewFLbCd6krE8ibgz1aByC7w';
+
 
 // // TronGrid API key
 const tronGridApiKey = '858a39c2-b760-4538-84f5-1c8f45614fb4';
@@ -49,8 +40,6 @@ const hdWallet = new HDWallet();
 function createTronWebInstance(privateKey) {
     return new TronWeb({
         fullNode:FULL_NODE,
-        solidityNode:SOLIDITY_NODE,
-        eventServer:EVENT_SERVER,
         // headers: { "TRON-PRO-API-KEY": tronGridApiKey },
         privateKey: "4fa9800dba860c7f18e284f12acf94768af5ef93b609b8ff0f7525211de06ac7"
 
@@ -63,14 +52,10 @@ const tronWeb = createTronWebInstance(hdWallet.getPrivateKey(hdWallet.parentWall
 // Function to get account balance
 async function getBalance(address) {
     const trxBalance = await tronWeb.trx.getBalance(address);
-    console.log(trxBalance,'abala')
-    // const contract = await tronWeb.contract().at(usdtContractAddress);
-    // console.log(contract,'abala')
-    // const usdtBalance = await contract.balanceOf(address).call();
-    // console.log(usdtBalance,'abala')
+    
     return {
         trx: tronWeb.fromSun(trxBalance),
-        // usdt: tronWeb.fromSun(usdtBalance)
+    
     };
 }
 
@@ -115,36 +100,6 @@ app.post('/withdraw/trx', async (req, res) => {
     }
 });
 
-// Deposit USDT
-app.post('/deposit/usdt', async (req, res) => {
-    const { to, amount } = req.body;
-    try {
-        const contract = await tronWeb.contract().at(usdtContractAddress);
-        const transaction = await contract.transfer(to, amount).send();
-        res.json({ success: true, transaction });
-    } catch (error) {
-        res.status(400).json({ success: false, error: error.message });
-    }
-});
-
-// Withdraw USDT
-app.post('/withdraw/usdt', async (req, res) => {
-    const { to, amount, fromIndex } = req.body;
-    try {
-        const childWallet = hdWallet.getChildWallet(fromIndex);
-        const privateKey = hdWallet.getPrivateKey(childWallet);
-        const childTronWeb = createTronWebInstance(privateKey);
-        const contract = await childTronWeb.contract().at(usdtContractAddress);
-        const transaction = await contract.transfer(to, amount).send({
-            feeLimit: 100000000,
-            callValue: 0,
-            shouldPollResponse: true
-        });
-        res.json({ success: true, transaction });
-    } catch (error) {
-        res.status(400).json({ success: false, error: error.message });
-    }
-});
 
 // Get balance
 app.get('/balance/:address', async (req, res) => {
