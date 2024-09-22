@@ -1,116 +1,117 @@
+import { Elysia } from "elysia";
 import { TronWeb } from "tronweb";
-import express from 'express'
-import bodyParser from 'body-parser'
-import HDKey from 'hdkey'
-import bip39 from 'bip39'
-const app = express();
-app.use(bodyParser.json());
-const FULL_NODE = 'https://nile.trongrid.io';
+import HDKey from "hdkey";
+import * as bip39 from "bip39";
 
+const FULL_NODE = process.env.FULL_NODE || "https://nile.trongrid.io";
+const PORT = process.env.PORT || 3000;
 
-// // TronGrid API key
-const tronGridApiKey = '858a39c2-b760-4538-84f5-1c8f45614fb4';
-// HD Wallet class
+interface Balance {
+  trx: string;
+}
+
 class HDWallet {
-    constructor(mnemonic) {
-        this.mnemonic = mnemonic || bip39.generateMnemonic();
-        this.seed = bip39.mnemonicToSeedSync(this.mnemonic);
-        this.hdkey = HDKey.fromMasterSeed(this.seed);
-        this.parentWallet = this.hdkey.derive("m/44'/195'/0'/0/0");
-    }
+  private mnemonic: string;
+  private seed: Buffer;
+  private hdkey: HDKey;
+  private parentWallet: HDKey;
 
-    getChildWallet(index) {
-        return this.hdkey.derive(`m/44'/195'/0'/0/${index}`);
+  constructor(mnemonic?: string) {
+    this.mnemonic = mnemonic || bip39.generateMnemonic();
+    if(!process.env.MNEMONIC) {
+      console.log(this.mnemonic,'\nif this is first time running app, write mnemonic to .env file');
     }
+    this.seed = bip39.mnemonicToSeedSync(this.mnemonic);
+    this.hdkey = HDKey.fromMasterSeed(this.seed);
+    this.parentWallet = this.hdkey.derive("m/44'/195'/0'/0/0");
+  }
 
-    getAddress(wallet) {
-        const privateKey = wallet.privateKey.toString('hex');
-        return TronWeb.address.fromPrivateKey(privateKey);
-    }
+  getChildWallet(index: number): HDKey {
+    return this.hdkey.derive(`m/44'/195'/0'/0/${index}`);
+  }
 
-    getPrivateKey(wallet) {
-        return wallet.privateKey.toString('hex');
-    }
+  getAddress(wallet: HDKey): string {
+    const privateKey = wallet.privateKey!.toString("hex");
+    return TronWeb.address.fromPrivateKey(privateKey).toString();
+  }
+
+  getPrivateKey(wallet: HDKey): string {
+    return wallet.privateKey!.toString("hex");
+  }
 }
 
-// Initialize HD Wallet
-const hdWallet = new HDWallet();
-
-// Function to create TronWeb instance with API key
-function createTronWebInstance(privateKey) {
-    return new TronWeb({
-        fullNode:FULL_NODE,
-        // headers: { "TRON-PRO-API-KEY": tronGridApiKey },
-        privateKey: "4fa9800dba860c7f18e284f12acf94768af5ef93b609b8ff0f7525211de06ac7"
-
-    });
+function createTronWebInstance(privateKey: string): TronWeb {
+  return new TronWeb({
+    fullHost: FULL_NODE,
+    privateKey: privateKey,
+  });
 }
 
-// Initialize TronWeb with parent wallet
-const tronWeb = createTronWebInstance(hdWallet.getPrivateKey(hdWallet.parentWallet));
+const hdWallet = new HDWallet(process.env.MNEMONIC);
+const tronWeb = createTronWebInstance(
+  hdWallet.getPrivateKey(hdWallet.getChildWallet(0))
+);
 
-// Function to get account balance
-async function getBalance(address) {
-    const trxBalance = await tronWeb.trx.getBalance(address);
-    
-    return {
-        trx: tronWeb.fromSun(trxBalance),
-    
-    };
+async function getBalance(address: string): Promise<Balance> {
+  const trxBalance = await tronWeb.trx.getBalance(address);
+  return {
+    trx: tronWeb.fromSun(trxBalance).toString(),
+  };
 }
 
-// Create new child wallet
-app.post('/create-wallet', (req, res) => {
-    const { index } = req.body;
+const app = new Elysia()
+  .post("/create-wallet", ({ body }) => {
+    const { index } = body as { index: number };
     const childWallet = hdWallet.getChildWallet(index);
     const address = hdWallet.getAddress(childWallet);
     const privateKey = hdWallet.getPrivateKey(childWallet);
-
-    res.json({ address, privateKey });
-});
-
-// Get parent wallet info
-app.get('/parent-wallet', (req, res) => {
-    const address = hdWallet.getAddress(hdWallet.parentWallet);
-    res.json({ address });
-});
-
-// Deposit TRX
-app.post('/deposit/trx', async (req, res) => {
-    const { to, amount } = req.body;
+    return { address, privateKey };
+  })
+  .get("/parent-wallet", () => {
+    const address = hdWallet.getAddress(hdWallet.getChildWallet(0));
+    return { address };
+  })
+  .post("/deposit/trx", async ({ body }) => {
+    const { to, amount } = body as { to: string; amount: number };
     try {
-        const transaction = await tronWeb.trx.sendTransaction(to, amount);
-        res.json({ success: true, transaction });
+      const transaction = await tronWeb.trx.sendTransaction(to, amount);
+      return { success: true, transaction };
     } catch (error) {
-        res.status(400).json({ success: false, error: error.message });
+      return new Response(
+        JSON.stringify({ success: false, error: (error as Error).message }),
+        { status: 400 }
+      );
     }
-});
-
-// Withdraw TRX
-app.post('/withdraw/trx', async (req, res) => {
-    const { to, amount, fromIndex } = req.body;
+  })
+  .post("/withdraw/trx", async ({ body }) => {
+    const { to, amount, fromIndex } = body as {
+      to: string;
+      amount: number;
+      fromIndex: number;
+    };
     try {
-        const childWallet = hdWallet.getChildWallet(fromIndex);
-        const privateKey = hdWallet.getPrivateKey(childWallet);
-        const childTronWeb = createTronWebInstance(privateKey);
-        const transaction = await childTronWeb.trx.sendTransaction(to, amount);
-        res.json({ success: true, transaction });
+      const childWallet = hdWallet.getChildWallet(fromIndex);
+      const privateKey = hdWallet.getPrivateKey(childWallet);
+      const childTronWeb = createTronWebInstance(privateKey);
+      const transaction = await childTronWeb.trx.sendTransaction(to, amount);
+      return { success: true, transaction };
     } catch (error) {
-        res.status(400).json({ success: false, error: error.message });
+      return new Response(
+        JSON.stringify({ success: false, error: (error as Error).message }),
+        { status: 400 }
+      );
     }
-});
-
-
-// Get balance
-app.get('/balance/:address', async (req, res) => {
+  })
+  .get("/balance/:address", async ({ params }) => {
     try {
-        const balance = await getBalance(req.params.address);
-        res.json(balance);
+      const balance = await getBalance(params.address);
+      return balance;
     } catch (error) {
-        console.log(error,'erero')
-        res.status(400).json({ error: error.message });
+      return new Response(JSON.stringify({ error: (error as Error).message }), {
+        status: 400,
+      });
     }
-});
+  })
+  .listen(PORT);
 
-const PORT = process.env.PORT || 3000;
-app.listen(PORT, () => console.log(`Server running on port ${PORT}`));
+console.log(`Server is running on http://localhost:${PORT}`);

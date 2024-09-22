@@ -1,5 +1,6 @@
 {
-  "name": "tron",
+  "name": "tron-manager",
+  "description": "sample project to work with hd wallet and deposit/withdraw on TRON network", 
   "module": "index.ts",
   "type": "module",
   "devDependencies": {
@@ -11,8 +12,7 @@
   "dependencies": {
     "@types/hdkey": "^2.0.3",
     "bip39": "^3.1.0",
-    "body-parser": "^1.20.2",
-    "express": "^4.19.2",
+    "elysia": "^1.1.13",
     "hdkey": "^2.1.0",
     "tronweb": "^6.0.0-beta.4"
   }
